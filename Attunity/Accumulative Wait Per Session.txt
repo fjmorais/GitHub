@@ -1,0 +1,8 @@
+select ses.program_name,txt.text, Waits.*
+from sys.dm_exec_session_wait_stats Waits
+inner join sys.dm_exec_sessions Ses
+on ses.session_id = Waits.session_id
+inner join sys.dm_exec_connections con
+on con.session_id = ses.session_id
+cross apply sys.dm_exec_sql_text(con.most_recent_sql_handle) txt
+order by wait_time_ms desc

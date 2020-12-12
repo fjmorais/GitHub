@@ -1,0 +1,146 @@
+Declare	@SQLStatement	NVARCHAR(4000) ,
+		@IDX			INT ,
+		@String			NVARCHAR(128) ,
+		@DBID			INT ,
+		@WaitInSeconds	INT;
+
+Select	@WaitInSeconds = 1;
+
+Select	@WaitInSeconds = @WaitInSeconds * 1000;
+
+If ( OBJECT_ID ( N'tempdb.dbo.#ResourceDB' ) Is Not Null )
+Begin
+		DROP TABLE #ResourceDB;
+End
+
+If ( OBJECT_ID ( N'tempdb.dbo.#ObjectResource' ) Is Not Null )
+Begin
+		DROP TABLE #ObjectResource;
+End
+
+CREATE TABLE #ResourceDB
+	(	[DBID]				[int] );
+
+CREATE TABLE #ObjectResource
+	(	[SPID]				[int] ,
+		[request_id]		[int] ,
+		[resource]			[nvarchar](512) ,
+		[resource_type]		[nvarchar](256) ,
+		[request_mode]		[nvarchar](256) ,
+		[request_status]	[nvarchar](256) );
+
+Insert Into #ResourceDB
+
+		Select	Distinct A.resource_database_id
+		From	sys.dm_tran_locks As A WITH ( NOLOCK )
+		Where	A.request_status = 'WAIT'
+		And		Has_DBAccess ( DB_NAME(A.resource_database_id) ) = 1;
+		
+
+Select	@DBID = 0;
+
+While Exists	(	Select	*
+					From	#ResourceDB WITH ( NOLOCK )
+					Where	[DBID] > @DBID )
+Begin
+		Select	@DBID = MIN ( [DBID] )
+		From	#ResourceDB WITH ( NOLOCK )
+		Where	[DBID] > @DBID;
+
+		Select	@SQLStatement =	N' USE	' + QuoteName ( DB_NAME ( @DBID ) ) + N';' +
+								N' Select	Distinct A2.request_session_id , A.request_request_id As request_id , DB_NAME( A.resource_database_id ) + IsNull ( ''.'' + USER_NAME ( ObjectProperty ( COALESCE ( B.[object_id] , C.[object_id] , E.[object_id] ) , ''OwnerId'' ) ) , '''' ) + IsNull ( ''.'' + OBJECT_NAME ( COALESCE ( B.[object_id] , C.[object_id] , E.[object_id] ) ) , '''' ) + CASE WHEN COALESCE ( C.index_id , E.index_id ) = 0 THEN '''' ELSE IsNull ( ''.'' + F.[name] , '''' ) END , A.resource_type , A2.request_mode , A2.request_status' +
+								N' From	sys.dm_tran_locks As A WITH ( NOLOCK ) LEFT JOIN sys.dm_tran_locks As A2 WITH ( READPAST) ' +
+								N'		ON		A.resource_associated_entity_id = A2.resource_associated_entity_id ' +
+								N'		And		A.resource_database_id = A2.resource_database_id ' +
+								N'		And		A.resource_type = A2.resource_type ' +
+								N'		And		A.resource_description = A2.resource_description ' +
+								N'		And		A.request_status = ''WAIT'' ' +
+								N'		LEFT JOIN ' + QuoteName ( DB_NAME ( @DBID ) ) + N'.sys.all_objects As B WITH ( READPAST) ' +
+								N' 		ON		A.resource_type In ( ''OBJECT'' ) ' +
+								N' 		And		A.resource_associated_entity_id = B.[object_id] ' +
+								N' 		LEFT JOIN ' + QuoteName ( DB_NAME ( @DBID ) ) + N'.sys.partitions As C WITH ( READPAST) ' +
+								N' 		ON		A.resource_type In ( ''PAGE'' , ''KEY'' , ''RID'' , ''HOBT'' ) ' +
+								N' 		And		A.resource_associated_entity_id = C.hobt_id ' +
+								N' 		LEFT JOIN ' + QuoteName ( DB_NAME ( @DBID ) ) + N'.sys.allocation_units As D WITH ( READPAST) ' +
+								N' 		ON		A.resource_type = ''ALLOCATION_UNIT'' ' +
+								N' 		And		A.resource_associated_entity_id = D.allocation_unit_id ' +
+								N' 		LEFT JOIN ' + QuoteName ( DB_NAME ( @DBID ) ) + N'.sys.partitions As E WITH ( READPAST) ' +
+								N' 		ON		( D.[type] In ( 1 , 3 ) ' +
+								N' 				And		D.container_id = E.hobt_id ) ' +
+								N' 		Or		( D.[type] In ( 2 ) ' +
+								N' 				And		D.container_id = E.partition_id ) ' +
+								N' 		LEFT JOIN ' + QuoteName ( DB_NAME ( @DBID ) ) + N'.sys.indexes As F WITH ( READPAST) ' +
+								N' 		ON		B.[object_id] = F.[object_id]' +
+								N'		And		COALESCE ( C.index_id , E.index_id ) = F.index_id ' +
+								N' Where	A.request_status = ''WAIT'' ' +
+								N' And		A.request_session_id In (	Select	session_id ' +
+								N'										From	sys.dm_exec_requests WITH ( READPAST) ' +
+								N'										Where	wait_time > @WaitInSeconds ) ' +
+								N' And		A.resource_database_id = @DBID; ';
+
+		Insert Into #ObjectResource
+
+				Execute sp_executesql	@SQLStatement , N'@WaitInSeconds INT , @DBID INT' , @WaitInSeconds , @DBID;
+End
+
+SELECT  * FROM 
+(
+	SELECT 
+	    row_number() over (partition by lb.spid order by IsNull(rr.request_id,0)) RN,
+		lb.spid, IsNull(rr.request_id,0) as request_id, IsNull ( rr.blocking_session_id , 0 ) As blocked_by_spid,
+		CASE	WHEN	COALESCE ( rr.database_id , 0 ) = 0	THEN	''
+		ELSE	DB_NAME ( COALESCE ( rr.database_id , 0 ) )
+		END As [db_name] ,
+		CONVERT ( NVARCHAR(512) , rs.resource ) As [resource] ,
+		CONVERT ( NVARCHAR(20) , rr.wait_type ) As [type] ,
+		rs.[resource_type] As lock_type ,
+		rs.[request_mode] As lock_mode ,
+		rs.[request_status] As lock_status,
+		COALESCE ( ss.status , rr.status ) +
+				CASE	WHEN	rr.blocking_session_id > 0 --THEN ', blocked' ELSE ', blocking' 
+								And		Exists (	Select	top 1 session_id
+													From	sys.dm_exec_requests As b WITH ( NOLOCK )
+													Where	lb.spid = b.blocking_session_id )
+						THEN	', blocking and blocked'
+						ELSE CASE WHEN	rr.blocking_session_id > 0 	THEN	', blocked'
+				ELSE	', blocking' END
+				END As [status] ,
+		COALESCE ( rr.wait_time , 0 ) / 1000. As [wait_time] ,
+		COALESCE ( rr.cpu_time , ss.cpu_time ) As cpu ,
+		COALESCE ( rr.reads  , ss.reads  ) As physical_io ,
+		IsNull ( rr.command , 'AWAITING COMMAND' ) As command ,
+		ss.[host_name] As [host_name] ,
+		COALESCE ( ss.nt_user_name , '' ) As nt_user ,
+		ss.login_name As sql_user ,
+		ss.[program_name] As program ,
+		IsNull ( CONVERT ( NTEXT , [text] ), N'/* SQL Text not available */' ) As sql_text
+	FROM					
+	( -- get a list of sessions that are either blocking or blocked. each session is returned only once
+		-- blocked sessions
+		Select r.session_id As spid 
+		From	sys.dm_exec_requests As r WITH ( NOLOCK ) 
+		Where	r.blocking_session_id > 0  
+		union 
+		-- blocking sessions 
+		Select r.blocking_session_id As spid
+		From	sys.dm_exec_requests As r WITH ( NOLOCK ) 
+		Where	r.blocking_session_id > 0  	
+	 ) lb
+	INNER JOIN sys.dm_exec_sessions ss WITH ( NOLOCK )
+		ON lb.spid=ss.session_id
+	LEFT JOIN sys.dm_exec_requests rr WITH ( NOLOCK )
+		ON lb.spid=rr.session_id
+		And		rr.wait_time > @WaitInSeconds	
+	LEFT JOIN sys.dm_exec_connections As c WITH ( NOLOCK )
+				ON		ss.session_id = c.most_recent_session_id
+				And		c.parent_connection_id Is Null			
+	LEFT JOIN #ObjectResource As rs WITH ( NOLOCK )
+		ON		ss.session_id = rs.SPID
+		And		IsNull ( rr.request_id , 0 ) = rs.request_id					
+	Outer Apply sys.dm_exec_sql_text(IsNull(rr.sql_handle,c.most_recent_sql_handle)) t
+) A
+where RN = 1
+Order By blocked_by_spid , spid;
+
+DROP TABLE #ResourceDB;
+DROP TABLE #ObjectResource;
