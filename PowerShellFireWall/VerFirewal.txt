@@ -1,0 +1,1 @@
+Get-ClusterLog -UseLocaltime -Destination c:\diag\ -Timespan  240

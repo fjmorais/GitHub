@@ -1,0 +1,1 @@
+exec dbo.sp_get_latest_questions

@@ -1,0 +1,801 @@
+USE [DBA]
+GO
+
+/****** Object:  Table [dbo].[attunity_wait_type]    Script Date: 10/22/2020 10:52:11 AM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[attunity_wait_type](
+	[spid] [smallint] NULL,
+	[host_name] [nvarchar](128) NULL,
+	[database_name] [nvarchar](128) NULL,
+	[login_time] [datetime] NULL,
+	[total_elapsed_time_sec] [numeric](16, 6) NULL,
+	[login_name] [nvarchar](128) NULL,
+	[status] [nvarchar](100) NULL,
+	[curent_wait_event] [nvarchar](100) NULL,
+	[current_wait_time_sec] [float] NULL,
+	[current_wait_resource] [nvarchar](256) NULL,
+	[top_acc_wait_event] [nvarchar](128) NULL,
+	[top_acc_wait_tasks_count] [bigint] NULL,
+	[top_acc_wait_time_ms] [bigint] NULL,
+	[top_wait_pct_of_time] [numeric](36, 13) NULL,
+	[open_transaction_count] [int] NULL,
+	[current_command] [nvarchar](32) NULL,
+	[last_batch] [nvarchar](max) NULL,
+	[last_sql] [nvarchar](max) NULL,
+	[program] [nvarchar](128) NULL,
+	[context_info] [varchar](150) NULL,
+	[blocked_by] [int] NULL,
+	[lock_timeout_sec] [float] NULL,
+	[degree_of_parallelism] [int] NULL,
+	[cpu_time_sec] [numeric](17, 6) NULL,
+	[reads] [bigint] NULL,
+	[writes] [bigint] NULL,
+	[logical_reads] [bigint] NULL,
+	[total_disk_io] [bigint] NULL,
+	[memory_usage_mb] [float] NULL,
+	[resource_pool_name] [nvarchar](150) NULL,
+	[net_packet_reads] [int] NULL,
+	[net_packet_writes] [int] NULL,
+	[net_packet_size_b] [int] NULL,
+	[total_network_read_write_mb] [numeric](38, 11) NULL,
+	[last_read] [datetime] NULL,
+	[last_write] [datetime] NULL,
+	[user_objects_alloc_KB] [int] NULL,
+	[user_objects_dealloc_KB] [int] NULL,
+	[internal_objects_alloc_KB] [int] NULL,
+	[internal_objects_dealloc_KB] [int] NULL,
+	[elpased_time_version_store_sec] [int] NULL,
+	[total_tempdb_storage] [int] NULL,
+	[job_id] [uniqueidentifier] NULL,
+	[job_name] [nvarchar](150) NULL,
+	[job_start_time] [datetime] NULL,
+	[average_job_duraton_sec] [int] NULL,
+	[job_stdv_duration] [int] NULL,
+	[current_job_duration_sec] [int] NULL,
+	[current_step_id] [int] NULL,
+	[current_step_name] [nvarchar](150) NULL,
+	[current_step_type] [nvarchar](150) NULL,
+	[current_step_command] [nvarchar](max) NULL,
+	[current_step_estimated_start_time] [datetime] NULL,
+	[current_step_average_duration] [int] NULL,
+	[current_step_stdv_duration] [int] NULL,
+	[current_step_estimated_duration] [int] NULL,
+	[curent_step_standard_score] [numeric](23, 11) NULL,
+	[xtp_transactions] [int] NULL,
+	[oldest_xtp_transaction_duration_sec] [float] NULL,
+	[order_by] [float] NULL,
+	[wait_type] [nvarchar](60) NULL,
+	[last_wait_type] [nvarchar](60) NULL,
+	[sql_text] [nvarchar](max) NULL,
+	[query_plan] [xml] NULL,
+	collection_time datetime
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+
+
+
+DECLARE @numberOfRuns INT ;
+SET @numberOfRuns = 6 ;
+DECLARE @msg NVARCHAR(1000) ;
+
+WHILE @numberOfRuns <> 0
+
+BEGIN;
+
+SET @numberOfRuns = @numberOfRuns - 1 ;
+
+	IF @numberOfRuns <> 0
+		BEGIN
+
+SET NOCOUNT ON;
+--SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+/***Variables***/
+--Filter
+declare
+		@Filter varchar(100),
+		@ShowInactiveSessions			bit ,
+		@ShowBackgroundSessions			bit ,
+		@FilterDBName					nvarchar(128),
+		@SPID							int,
+		@Top							int,
+		@TopOnJobHistory				int,
+		@Program						nvarchar(200),
+		@Batch							nvarchar(max),
+		@DebugMode						bit;
+
+--Set values to parameters
+select
+	@DebugMode						= 0, 
+	@Filter							= 'all',
+--	/*
+--  'all'
+--	'BLOCKED'
+--	'CPU'
+--	'IO'
+--	'MEMORY'
+--	'NETWORK'
+--	'TEMPDB'
+--	'LONG RUNNING'
+--	'XTP'
+--	'JOBS'
+--  'WAITS'
+--	*/
+
+	@ShowInactiveSessions			= 1,
+	@ShowBackgroundSessions			= 0,
+	@FilterDBName					= '',
+	@SPID							= 0,
+	@Top							= 150,
+	@Program						= 'Attunity Replicate',
+	@Batch							= '',
+	@TopOnJobHistory				= 30;
+
+--select
+--	@DebugMode						= 0, 
+--	@Filter							= ?,
+--	@ShowInactiveSessions			= ?,
+--	@ShowBackgroundSessions			= ?,
+--	@FilterDBName					= '',
+--	@SPID							= ?,
+--	@Top							= ?;
+
+
+--Helpers
+declare 
+		@CMD							varchar(max),
+		@OrderBy						int,
+		@Version						int;
+
+--Tables
+declare 
+	@SessionsInformation table
+			(
+			session_id						int,
+			/*Requests*/
+			database_id						int,
+			status							nvarchar(100),
+			blocked_by_spid					int,
+			database_name					nvarchar(100),
+			wait_event						nvarchar(100),
+			wait_time_sec					real,
+			wait_resource					nvarchar(256),
+			open_transaction_count			int,
+			percent_complete				real,
+			/*CPU*/
+			cpu_time_sec					int,
+			degree_of_parallelism			int,
+			/*IO*/
+			reads							bigint,
+			writes							bigint,
+			logical_reads					bigint,
+			total_disk_io					as IsNull (reads+writes,0.),
+			sql_handle						varbinary(100),
+			resource_pool_name				nvarchar(150),
+			command							nvarchar(32),
+			lock_timeout_sec				real,
+			memory_usage					real,
+			/*TempDB*/
+			user_objects_alloc_KB			int,
+			user_objects_dealloc_KB			int,
+			internal_objects_alloc_KB		int,
+			internal_objects_dealloc_KB		int,
+			elpased_time_version_store_sec	int,
+			tempdb_storage					as user_objects_alloc_KB +user_objects_dealloc_KB + internal_objects_alloc_KB+ internal_objects_dealloc_KB,
+			xtp_transactions				int,
+			oldest_xtp_transaction_duration_sec	real,
+			/*Inactive*/
+			most_recent_sql_handle varbinary(64),
+			/*network*/
+			net_packet_reads				int,
+			net_packet_writes				int,
+			net_packet_size_b				int,
+			total_network_read_write_mb				as 1.0*(net_packet_reads+net_packet_writes)*net_packet_size_b/1024./1024.,
+			last_read						datetime,
+			last_write						datetime,
+			/*For a single SPID*/
+			last_batch						nvarchar(max),
+			sql_statement					nvarchar(max),
+			/*For debug*/
+			record_source					varchar(max)
+			);
+
+declare @JobsSessions table
+			(
+			session_id						int,
+			job_id							uniqueidentifier,
+			job_name						nvarchar(150),
+			job_start_time					datetime,
+			average_job_duraton_sec			int,
+			current_job_duration_sec		int,
+			job_stdv_duration				int,
+			current_step_id					int,
+			current_step_name				nvarchar(150),
+			current_step_estimated_start_time datetime,	
+			current_step_average_duration	int,
+			current_step_estimated_duration	int,
+			current_step_stdv_duration		int,
+			current_step_type				nvarchar(150),
+			current_step_command			nvarchar(max)	
+			);
+
+
+
+select	@Version= cast (substring(cast(SERVERPROPERTY('productversion') as varchar),1,charindex('.',cast(SERVERPROPERTY('productversion') as varchar))-1) as smallint),
+		@Filter = upper(@Filter);
+
+
+declare @TopWaitPerSession table
+		(
+		session_id	smallint,
+		wait_type	nvarchar(128),
+		waiting_tasks_count	bigint,
+		wait_time_ms	bigint
+		);
+
+if @Version > 11
+begin
+	set @CMD = '
+				With AccumulativeWats as(
+						select row_number() over (partition by Waits.session_id order by wait_time_ms desc) row,
+						Waits.session_id,
+						Waits.wait_type,
+						Waits.waiting_tasks_count,
+						Waits.wait_time_ms
+						from sys.dm_exec_session_wait_stats Waits
+						)
+				select session_id, wait_type, waiting_tasks_count, wait_time_ms
+				from AccumulativeWats
+				where row = 1
+				'
+	insert into @TopWaitPerSession
+	exec (@CMD);
+end
+
+
+
+set @CMD=
+		case
+			when @Version > 9 then
+			'
+			with ResourcePoolGroups as
+				(
+				select	group_id			=	wg.group_id,
+						resource_pool_name	=	(select top 1 name from sys.dm_resource_governor_resource_pools rp (nolock) where wg.pool_id = rp.pool_id)
+				from sys.dm_resource_governor_workload_groups wg (nolock)
+				)
+			'
+			else ''
+		end +
+		'
+		select 
+			req.session_id,
+			req.database_id,
+			case 
+				when req.blocking_session_id > 0 then ''Blocked'' 
+				else req.[status] 
+			end status,
+			req.blocking_session_id,
+			case when isnull(req.database_id,0)=0 then '''' else rtrim(db_name(req.database_id)) end,
+			req.wait_type,
+			IsNull (case when req.wait_time < 0 then 2147483647+(2147483649+req.wait_time) else req.wait_time end,0)/1000. wait_time_sec,
+			req.wait_resource,
+			req.open_transaction_count,
+			req.percent_complete,
+			IsNull(req.cpu_time,0)/1000 cpu_time,
+			req.reads,
+			req.writes,
+			req.logical_reads,
+			req.sql_handle,
+			'+case when @Version > 9 then 'rpg.resource_pool_name' else 'cast(null as nvarchar(150))' end +' resource_pool_name,
+			isnull(rtrim(req.command ),'''') command,
+			case 
+				when req.lock_timeout in (4294967295,0,-1) then 0 
+				else 
+					case 
+						when req.lock_timeout < 0 then 2147483647+(2147483649+req.lock_timeout) 
+						else req.lock_timeout 
+					end
+			end/ 1000.0 lock_timeout_sec,
+			req.granted_query_memory memory_usage,
+			'
+			+case 
+				when @SPID > 0 or @Filter in ('ALL','WAITS') then
+			'
+			est.text,
+			'+
+			case
+				when @Version<12 then
+						'coalesce(substring(est.[text],(req.statement_start_offset/2)+1,case when req.statement_end_offset = -1 then len(convert(nvarchar(max), est.[text] ))*2	else req.statement_end_offset end-(req.statement_start_offset)/2),N'''')'
+				else
+						'coalesce(substring(est.[text],(req.statement_start_offset/2)+1,case when req.statement_end_offset = -1 then datalength(est.[text])						else req.statement_end_offset end-(req.statement_start_offset)/2),N'''')'
+				end
+			else 'null,null'
+		end+
+			',''sys.dm_exec_requests''
+		from sys.dm_exec_requests req (nolock)
+		'+case
+			when @Version > 9 then
+			'
+			left outer join ResourcePoolGroups rpg
+				on rpg.group_id=req.group_id
+			'
+			else ''
+		end +
+		case 
+			when @SPID > 0 or @Filter in ('ALL','WAITS') then
+			'
+			outer apply sys.dm_exec_sql_text(req.sql_handle) est
+			'
+			else ''
+		end+
+		'
+		where 1=1
+		'+
+		case 
+			when @Filter='BLOCKED'	then	'and req.blocking_session_id > 0'
+			when @SPID>0			then	'and req.session_id='+cast(@SPID as varchar)
+			else ''
+		end
+
+if @DebugMode = 1 select @CMD "@CMD";
+if @DebugMode = 1 print @CMD;
+if @DebugMode = 1 exec (@CMD);
+insert into @SessionsInformation
+			(
+			session_id,
+			database_id,
+			status,
+			blocked_by_spid,
+			database_name,
+			wait_event,
+			wait_time_sec,
+			wait_resource,
+			open_transaction_count,
+			percent_complete,
+			cpu_time_sec,
+			reads,
+			writes,
+			logical_reads,
+			sql_handle,
+			resource_pool_name,
+			command,
+			lock_timeout_sec,
+			memory_usage,
+			last_batch,
+			sql_statement,
+			record_source
+			)
+exec (@CMD)
+
+
+/*************************
+For TempDB
+**************************/
+if @Filter = 'TEMPDB' or @SPID>0 or @Filter in ('ALL','WAITS')
+begin
+	with TempDBInstancesAllocations as
+	(
+	select
+			session_id,
+			user_objects_alloc_page_count,
+			user_objects_dealloc_page_count,
+			internal_objects_alloc_page_count,
+			internal_objects_dealloc_page_count
+	from sys.dm_db_session_space_usage As TS (NOLOCK)
+	where user_objects_alloc_page_count +user_objects_dealloc_page_count + internal_objects_alloc_page_count+ internal_objects_dealloc_page_count>0
+	union all
+	select
+		session_id,
+		user_objects_alloc_page_count,
+		user_objects_dealloc_page_count,
+		internal_objects_alloc_page_count,
+		internal_objects_dealloc_page_count
+	from sys.dm_db_task_space_usage As TSC (NOLOCK)
+	where user_objects_alloc_page_count +user_objects_dealloc_page_count + internal_objects_alloc_page_count+ internal_objects_dealloc_page_count>0
+	)
+	insert into @SessionsInformation(session_id, user_objects_alloc_KB, user_objects_dealloc_KB, internal_objects_alloc_KB, internal_objects_dealloc_KB, elpased_time_version_store_sec,record_source)
+	select	top (@Top)
+			C.session_id,
+			user_objects_alloc_page_count*8		user_objects_alloc_KB,
+			user_objects_dealloc_page_count*8		user_objects_dealloc_KB,
+			internal_objects_alloc_page_count*8	internal_objects_alloc_KB,
+			internal_objects_dealloc_page_count*8	internal_objects_dealloc_KB,
+			D.elapsed_time_seconds elpased_time_version_store_sec,
+			'TempDB'
+	from TempDBInstancesAllocations C
+	LEFT JOIN sys.dm_tran_active_snapshot_database_transactions D (NOLOCK)
+			ON D.session_id = C.session_id and transaction_sequence_num is not null
+	where C.session_id = case @SPID when 0 then C.session_id else @SPID end
+end
+
+/*********************************************
+Gathering XTP information
+*********************************************/
+
+if (@Filter='XTP' or @SPID>0 or @Filter in ('ALL','WAITS')) and @Version>11
+begin
+set @CMD='';
+select @CMD=@CMD +
+case row_number() over (order by name)
+	when 1 then ''
+	else '
+	union all '
+	end+
+	'select
+			session_id,
+			transaction_id
+			from ['+name+'].sys.dm_db_xtp_transactions (NOLOCK)
+			'+case when @SPID>0 then 'where session_id='+cast(@SPID as varchar) else '' end+'
+			'
+from sys.databases
+where state=0
+
+set @CMD = '
+select session_id, 1 xtp_transactions, datediff(ms,transaction_begin_time,getdate())/1000. transaction_duration,''XTP''
+from (
+'+@CMD+'
+) st
+inner join sys.dm_tran_active_transactions at
+				on at.transaction_id=st.transaction_id';
+
+if @DebugMode = 1 exec (@CMD);
+if @DebugMode = 1 print @CMD;
+
+insert into @SessionsInformation (session_id,xtp_transactions,oldest_xtp_transaction_duration_sec,record_source)
+exec (@CMD)
+end
+
+
+/********************************************
+Gathering CPU
+********************************************/
+if (@Filter='CPU' or @SPID>0 or @Filter in ('ALL','WAITS'))
+begin
+	insert into @SessionsInformation(session_id,degree_of_parallelism)
+	select session_id,count(*)
+	from sys.dm_os_tasks
+	group by session_id
+end
+
+
+/********************************************
+Gathering jobs
+********************************************/
+if (@Filter='JOBS' or @SPID>0 or @Filter in ('ALL','WAITS'))
+begin
+		declare @Jobs table
+		(
+			job_id uniqueidentifier NOT NULL,
+			last_run_date nvarchar (20) NOT NULL,
+			last_run_time nvarchar (20) NOT NULL,
+			next_run_date nvarchar (20) NOT NULL,
+			next_run_time nvarchar (20) NOT NULL,
+			next_run_schedule_id INT NOT NULL,
+			requested_to_run INT NOT NULL,
+			request_source INT NOT NULL,
+			request_source_id sysname
+			COLLATE database_default NULL,
+			running INT NOT NULL,
+			current_step INT NOT NULL,
+			current_retry_attempt INT NOT NULL,
+			job_state INT NOT NULL
+		)
+		declare @job_owner   sysname
+		declare @is_sysadmin   int
+		set @is_sysadmin   = isnull (is_srvrolemember ('sysadmin'), 0)
+		set @job_owner   = suser_sname ()
+		begin try
+			insert into @Jobs
+			execute master.dbo.xp_sqlagent_enum_jobs @is_sysadmin, @job_owner
+		end try
+		begin catch
+		--if xp_sqlagent_enum_jobs fails there is a worse alternative that might 
+		
+		end catch
+
+		
+		update @Jobs
+		set last_run_time    = right ('000000' + last_run_time, 6),
+		next_run_time    = right ('000000' + next_run_time, 6);
+
+		with JobHistory as
+		(
+		select	*,
+				row_number() over (partition by job_id order by run_date desc, run_time desc) row
+		from msdb.dbo.sysjobhistory
+		)
+		insert into @JobsSessions (
+			session_id,
+			job_id,
+			job_name,
+			job_start_time,
+			average_job_duraton_sec,
+			current_job_duration_sec,
+			job_stdv_duration,
+			current_step_id,
+			current_step_name,
+			current_step_estimated_start_time,	
+			current_step_average_duration,
+			current_step_estimated_duration,
+			current_step_stdv_duration,
+			current_step_type,
+			current_step_command	
+			)
+		select 
+			session_id						= ses.session_id,
+			job_id							= j.job_id,
+			job_name						= sj.name,
+			job_start_time					= max(sja.run_requested_date),
+			average_job_duraton_sec			= avg(sjh_job.run_duration%100+sjh_job.run_duration/100%100*60+sjh_job.run_duration/10000%100*60*60),
+			current_job_duration_sec		= datediff(s,max(sja.run_requested_date),getdate()),
+			job_stdv_duration				= stdev(sjh_job.run_duration%100+sjh_job.run_duration/100%100*60+sjh_job.run_duration/10000%100*60*60),
+			current_step_id					= j.current_step,
+			current_step_name				= max(sjs.step_name),
+			current_step_estimated_start_time = case when max(sja.last_executed_step_id) is null then max(sja.run_requested_date) else max(dateadd(s,sjh_prev_step.run_duration%100+sjh_prev_step.run_duration/100%100*60+sjh_prev_step.run_duration/10000%100*60*60,sja.last_executed_step_date)) end, 
+			current_step_average_duration	= avg(sjh.run_duration%100+sjh.run_duration/100%100*60+sjh.run_duration/10000%100*60*60),
+			current_step_estimated_duration	= case when max(sja.last_executed_step_id) is null then datediff(s,max(sja.run_requested_date),getdate()) else max(datediff(s,dateadd(s,sjh_prev_step.run_duration%100+sjh_prev_step.run_duration/100%100*60+sjh_prev_step.run_duration/10000%100*60*60,sja.last_executed_step_date),getdate())) end, 
+			current_step_stdv_duration		= stdev (sjh.run_duration%100+sjh.run_duration/100%100*60+sjh.run_duration/10000%100*60*60),
+			current_step_type				= max(sjs.subsystem),
+			current_step_command			= max(sjs.command)
+		from @Jobs j
+		left join sys.dm_exec_sessions ses
+			on master.dbo.fn_varbintohexstr(convert(varbinary(16), j.job_id)) COLLATE Latin1_General_CI_AI = substring(replace(ses.program_name, 'SQLAgent - TSQL JobStep (Job ', ''), 1, 34)
+		inner join msdb.dbo.sysjobsteps sjs
+			on sjs.job_id=j.job_id
+			and sjs.step_id=j.current_step
+		inner join msdb.dbo.sysjobs sj
+			on sj.job_id = j.job_id
+		inner join msdb.dbo.sysjobactivity sja
+			on sja.job_id=j.job_id
+		left outer join JobHistory sjh
+			on	sjh.job_id=j.job_id
+			and sjh.step_id = j.current_step
+			and sjh.run_status = 1 --Only successful steps
+			and sjh.row<=@TopOnJobHistory
+		left outer join JobHistory sjh_prev_step
+			on	sjh_prev_step.job_id=j.job_id
+			and sjh_prev_step.step_id = sja.last_executed_step_id
+			and sjh_prev_step.row<=@TopOnJobHistory
+		left outer join JobHistory sjh_job
+			on	sjh_job.job_id=j.job_id
+			and sjh_job.step_id = 0
+			and sjh_job.row<=@TopOnJobHistory
+		where running=1
+		and (@SPID=0 or ses.session_id=@SPID)
+		group by 
+				ses.session_id,
+				sj.name,
+				j.job_id,
+				j.current_step
+end
+
+/*********************************************
+Gathering inactive processes information (if we need to show inactive and it's not for TempDB) and network
+*********************************************/
+if (@ShowInactiveSessions = 1 and not(@Filter = 'TEMPDB')) or @SPID>0 or @Filter in ('ALL','WAITS','NETWORK')
+begin
+	insert into @SessionsInformation (session_id,most_recent_sql_handle, net_packet_reads, net_packet_writes, net_packet_size_b, last_read, last_write,record_source)
+	select	session_id, most_recent_sql_handle, num_reads, num_writes, net_packet_size, last_read, last_write, 'sys.dm_exec_connections'
+	from	sys.dm_exec_connections
+	where	parent_connection_id Is Null
+	and		session_id = case when @SPID>0 then @SPID else session_id end
+	;
+
+	if @SPID>0 or @Filter in ('ALL','WAITS')
+	begin
+		update @SessionsInformation
+		set last_batch = (select top 1 text from sys.dm_exec_sql_text(most_recent_sql_handle))
+		where most_recent_sql_handle is not null
+	end
+end
+
+
+
+
+if @DebugMode = 1 select * from @SessionsInformation;
+
+--if @DebugMode = 1 
+with SessionsInformation as
+(
+	select 
+			session_id,
+			/*Requests*/
+			database_id				= max(database_id),
+			status					= max(status),
+			blocked_by_spid			= max(blocked_by_spid),
+			database_name			= max(database_name),
+			wait_event				= max(wait_event),
+			wait_time_sec			= sum(wait_time_sec),
+			wait_resource			= max(wait_resource),
+			open_transaction_count	= sum(open_transaction_count),
+			percent_complete		= avg(percent_complete),
+			/*CPU*/
+			degree_of_parallelism	= sum(degree_of_parallelism),
+			cpu_time_sec			= sum(cpu_time_sec),
+			/*IO*/
+			reads					= sum(reads),
+			writes					= sum(writes),
+			logical_reads			= sum(logical_reads),
+			total_disk_io			= sum(total_disk_io),
+			sql_handle				= max(sql_handle),
+			resource_pool_name		= max(resource_pool_name),
+			command					= max(command),
+			lock_timeout_sec		= sum(lock_timeout_sec),
+			memory_usage			= sum(memory_usage),
+			/*TempDB*/
+			user_objects_alloc_KB	= sum(user_objects_alloc_KB),
+			user_objects_dealloc_KB	= sum(user_objects_dealloc_KB),
+			internal_objects_alloc_KB = sum(internal_objects_alloc_KB),
+			internal_objects_dealloc_KB = sum(internal_objects_dealloc_KB),
+			elpased_time_version_store_sec = sum(elpased_time_version_store_sec),
+			tempdb_storage			= sum(tempdb_storage),
+			xtp_transactions		= sum(xtp_transactions),
+			oldest_xtp_transaction_duration_sec = sum(oldest_xtp_transaction_duration_sec),
+			most_recent_sql_handle	= max(most_recent_sql_handle),
+			net_packet_reads		= sum(net_packet_reads),
+			net_packet_writes		= sum(net_packet_writes),
+			net_packet_size_b		= max(net_packet_size_b),
+			total_network_read_write_mb	= sum(total_network_read_write_mb),
+			last_read				= max(last_read),
+			last_write				= max(last_write),
+			sql_statement			= max(sql_statement),
+			last_batch				= max(last_batch)
+	from @SessionsInformation
+	group by session_id
+)
+
+insert into dba.dbo.attunity_wait_type
+
+select top(@Top)
+			spid					= ses.session_id,
+			host_name				= ses.host_name,
+			database_name			= coalesce(db_name(si.database_id),''),
+			login_time				= ses.login_time,
+			total_elapsed_time_sec	= ses.total_elapsed_time/1000.,
+			login_name				= ses.login_name,
+			status					= case when si.blocked_by_spid>0 then 'Blocked' else coalesce(si.status,ses.status) end,
+			/*Waits*/
+			curent_wait_event		= coalesce(si.wait_event,''),
+			current_wait_time_sec	= coalesce(si.wait_time_sec,0),
+			current_wait_resource	= coalesce(si.wait_resource,''),
+			top_acc_wait_event		= TopSes.wait_type,
+			top_acc_wait_tasks_count= TopSes.waiting_tasks_count,
+			top_acc_wait_time_ms	= TopSes.wait_time_ms,
+			--top_wait_avg_time_ms	= 1.0*TopSes.wait_time_ms/TopSes.waiting_tasks_count,
+			top_wait_pct_of_time	= 100.00*TopSes.wait_time_ms/(ses.total_elapsed_time+1),
+			open_transaction_count	= coalesce(si.open_transaction_count,0),
+			current_command			= coalesce(si.command,''),
+			last_batch				= coalesce(si.last_batch,''),
+			last_sql				= coalesce(si.sql_statement,''),
+			program					= coalesce(ses.program_name,''),
+			context_info			= convert(varchar(150),ses.context_info),
+			/*Blocked*/
+			blocked_by				= coalesce(si.blocked_by_spid,0),
+			lock_timeout_sec		= case when si.lock_timeout_sec in (4294967295, 0, -1 ) then 0 else case when si.lock_timeout_sec< 0 then 0 else coalesce(si.lock_timeout_sec,ses.lock_timeout/1000.0) end end,
+			/*CPU*/
+			degree_of_parallelism	= coalesce(si.degree_of_parallelism,1),
+			cpu_time_sec			= coalesce(si.cpu_time_sec, ses.cpu_time/1000.0,0),
+			/*IO*/
+			reads					= coalesce(si.reads,0),
+			writes					= coalesce(si.writes,0),
+			logical_reads			= coalesce(si.logical_reads,0),
+			total_disk_io			= coalesce(si.total_disk_io,0),
+			/*Memory*/
+			memory_usage_mb			= coalesce(si.memory_usage,ses.memory_usage)*8/1024.,
+			resource_pool_name		= coalesce(si.resource_pool_name,''),
+			/*Network*/
+			net_packet_reads		= coalesce(si.net_packet_reads,0),
+			net_packet_writes		= coalesce(si.net_packet_writes,0),
+			net_packet_size_b		= coalesce(si.net_packet_size_b,0),
+			total_network_read_write_mb = coalesce(si.total_network_read_write_mb,0),
+			last_read				= last_read,
+			last_write				= last_write,
+			/*TempDB*/
+			user_objects_alloc_KB	= coalesce(si.user_objects_alloc_KB,0),
+			user_objects_dealloc_KB	= coalesce(si.user_objects_dealloc_KB,0),
+			internal_objects_alloc_KB = coalesce(si.internal_objects_alloc_KB,0),
+			internal_objects_dealloc_KB = coalesce(si.internal_objects_dealloc_KB,0),
+			elpased_time_version_store_sec = coalesce(si.elpased_time_version_store_sec,0),
+			total_tempdb_storage	= coalesce(si.tempdb_storage,0),
+			/*Jobs*/
+			job_id					= js.job_id,
+			job_name				= js.job_name,
+			job_start_time			= js.job_start_time,
+			average_job_duraton_sec	= js.average_job_duraton_sec,
+			job_stdv_duration		= js.job_stdv_duration,
+			current_job_duration_sec= js.current_job_duration_sec,
+			current_step_id			= js.current_step_id,
+			current_step_name		= js.current_step_name,
+			current_step_type		= js.current_step_type,
+			current_step_command	= js.current_step_command,
+			current_step_estimated_start_time = js.current_step_estimated_start_time,
+			current_step_average_duration = js.current_step_average_duration,
+			current_step_stdv_duration = js.current_step_stdv_duration,
+			current_step_estimated_duration = js.current_step_estimated_duration,
+			curent_step_standard_score = 1.*(js.current_step_estimated_duration-js.current_step_average_duration)/(js.current_step_stdv_duration+1),
+			/*XTP*/
+			xtp_transactions		= si.xtp_transactions,
+			oldest_xtp_transaction_duration_sec	= si.oldest_xtp_transaction_duration_sec,
+			/*Order by*/
+			order_by				= case @Filter
+										when 'BLOCKED'	then si.wait_time_sec
+										when 'CPU'		then coalesce(si.cpu_time_sec, ses.cpu_time/1000.0,0)
+										when 'IO'		then si.total_disk_io
+										when 'MEMORY'	then coalesce(si.memory_usage,ses.memory_usage)
+										when 'NETWORK'	then si.total_network_read_write_mb
+										when 'TEMPDB'	then si.tempdb_storage
+										when 'LONG RUNNING'	then ses.total_elapsed_time
+										when 'XTP'		then si.wait_time_sec
+										when 'JOBS'		then 1.*(js.current_step_estimated_duration-js.current_step_average_duration)/(js.current_step_stdv_duration+1)
+										when 'WAITS'    then TopSes.wait_time_ms
+										else -ses.session_id
+									  end ,
+        r.wait_type,
+		r.last_wait_type,
+		t.text as sql_text,
+		qp.query_plan ,
+		getdate() as Collection_Time
+from	sys.dm_exec_sessions ses  (nolock)
+left join sys.dm_exec_requests  r 
+	on ses.session_id = r.session_id
+cross apply sys.dm_exec_sql_text(r.sql_handle) AS t
+CROSS APPLY sys.dm_exec_query_plan (r.plan_handle) as qp
+left outer join SessionsInformation si (nolock)
+	on si.session_id=ses.session_id
+full outer join @JobsSessions js
+	on js.session_id = ses.session_id
+left outer join @TopWaitPerSession TopSes
+	on TopSes.session_id = ses.session_id
+where 1=1
+and		
+	(
+		(		@Filter not in ('JOBS','BLOCKED','TEMPDB','XTP') 
+			and ses.session_id = case @SPID when 0 then ses.session_id else @SPID end 
+			and ses.session_id > case @ShowBackgroundSessions when 0 then 50 else 0 end
+		) --The rest of the cases
+		or		
+		(@Filter in ('JOBS') and js.job_id is not null) --Jobs
+		or		
+		(@Filter in ('BLOCKED') and si.blocked_by_spid>0) --Blocked
+		or		
+		(@Filter in ('TEMPDB') and si.tempdb_storage>0) --TempDB
+		or		
+		(@Filter in ('XTP') and (si.xtp_transactions>0 or si.wait_event like '%XTP%')) --XTP
+	)
+and (@ShowInactiveSessions=1 or lower(coalesce(si.[status] collate DATABASE_DEFAULT, ses.[status] collate DATABASE_DEFAULT)) not in ( 'sleeping' , 'dormant' ) or si.open_transaction_count > 0 or si.blocked_by_spid > 0) --Active
+and coalesce(ses.program_name,'') like '%'+@Program+'%'
+and coalesce(si.last_batch,'') like '%'+@Batch+'%'
+order by order_by desc
+
+	RAISERROR(@msg,0,0) WITH nowait ;
+
+                WAITFOR DELAY '00:00:05'
+            END
+ELSE
+            BEGIN
+                SET @msg = CONVERT(CHAR(19), GETDATE(), 121) + ': ' + 'Done.'
+                RAISERROR(@msg,0,0) WITH nowait ;
+            END
+
+    END ;
+go
+
+
+
+DECLARE @Rows INT
+SET @Rows = 1
+
+WHILE (@Rows > 0)
+BEGIN
+    DELETE TOP (1000) FROM dba.dbo.attunity_wait_type
+    WHERE [collection_time] < GETDATE() - 30
+
+    SET @Rows = @@ROWCOUNT
+END
