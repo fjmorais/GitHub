@@ -1,6 +1,6 @@
 USE [DBA]
 GO
-
+-- temp
 /****** Object:  Table [dbo].[attunity_wait_type]    Script Date: 10/22/2020 10:52:11 AM ******/
 SET ANSI_NULLS ON
 GO
@@ -112,7 +112,7 @@ declare
 
 --Set values to parameters
 select
-	@DebugMode						= 0, 
+	@DebugMode						= 0,
 	@Filter							= 'all',
 --	/*
 --  'all'
@@ -138,7 +138,7 @@ select
 	@TopOnJobHistory				= 30;
 
 --select
---	@DebugMode						= 0, 
+--	@DebugMode						= 0,
 --	@Filter							= ?,
 --	@ShowInactiveSessions			= ?,
 --	@ShowBackgroundSessions			= ?,
@@ -148,13 +148,13 @@ select
 
 
 --Helpers
-declare 
+declare
 		@CMD							varchar(max),
 		@OrderBy						int,
 		@Version						int;
 
 --Tables
-declare 
+declare
 	@SessionsInformation table
 			(
 			session_id						int,
@@ -217,12 +217,12 @@ declare @JobsSessions table
 			job_stdv_duration				int,
 			current_step_id					int,
 			current_step_name				nvarchar(150),
-			current_step_estimated_start_time datetime,	
+			current_step_estimated_start_time datetime,
 			current_step_average_duration	int,
 			current_step_estimated_duration	int,
 			current_step_stdv_duration		int,
 			current_step_type				nvarchar(150),
-			current_step_command			nvarchar(max)	
+			current_step_command			nvarchar(max)
 			);
 
 
@@ -274,12 +274,12 @@ set @CMD=
 			else ''
 		end +
 		'
-		select 
+		select
 			req.session_id,
 			req.database_id,
-			case 
-				when req.blocking_session_id > 0 then ''Blocked'' 
-				else req.[status] 
+			case
+				when req.blocking_session_id > 0 then ''Blocked''
+				else req.[status]
 			end status,
 			req.blocking_session_id,
 			case when isnull(req.database_id,0)=0 then '''' else rtrim(db_name(req.database_id)) end,
@@ -295,17 +295,17 @@ set @CMD=
 			req.sql_handle,
 			'+case when @Version > 9 then 'rpg.resource_pool_name' else 'cast(null as nvarchar(150))' end +' resource_pool_name,
 			isnull(rtrim(req.command ),'''') command,
-			case 
-				when req.lock_timeout in (4294967295,0,-1) then 0 
-				else 
-					case 
-						when req.lock_timeout < 0 then 2147483647+(2147483649+req.lock_timeout) 
-						else req.lock_timeout 
+			case
+				when req.lock_timeout in (4294967295,0,-1) then 0
+				else
+					case
+						when req.lock_timeout < 0 then 2147483647+(2147483649+req.lock_timeout)
+						else req.lock_timeout
 					end
 			end/ 1000.0 lock_timeout_sec,
 			req.granted_query_memory memory_usage,
 			'
-			+case 
+			+case
 				when @SPID > 0 or @Filter in ('ALL','WAITS') then
 			'
 			est.text,
@@ -328,7 +328,7 @@ set @CMD=
 			'
 			else ''
 		end +
-		case 
+		case
 			when @SPID > 0 or @Filter in ('ALL','WAITS') then
 			'
 			outer apply sys.dm_exec_sql_text(req.sql_handle) est
@@ -338,7 +338,7 @@ set @CMD=
 		'
 		where 1=1
 		'+
-		case 
+		case
 			when @Filter='BLOCKED'	then	'and req.blocking_session_id > 0'
 			when @SPID>0			then	'and req.session_id='+cast(@SPID as varchar)
 			else ''
@@ -496,11 +496,11 @@ begin
 			execute master.dbo.xp_sqlagent_enum_jobs @is_sysadmin, @job_owner
 		end try
 		begin catch
-		--if xp_sqlagent_enum_jobs fails there is a worse alternative that might 
-		
+		--if xp_sqlagent_enum_jobs fails there is a worse alternative that might
+
 		end catch
 
-		
+
 		update @Jobs
 		set last_run_time    = right ('000000' + last_run_time, 6),
 		next_run_time    = right ('000000' + next_run_time, 6);
@@ -521,14 +521,14 @@ begin
 			job_stdv_duration,
 			current_step_id,
 			current_step_name,
-			current_step_estimated_start_time,	
+			current_step_estimated_start_time,
 			current_step_average_duration,
 			current_step_estimated_duration,
 			current_step_stdv_duration,
 			current_step_type,
-			current_step_command	
+			current_step_command
 			)
-		select 
+		select
 			session_id						= ses.session_id,
 			job_id							= j.job_id,
 			job_name						= sj.name,
@@ -538,9 +538,9 @@ begin
 			job_stdv_duration				= stdev(sjh_job.run_duration%100+sjh_job.run_duration/100%100*60+sjh_job.run_duration/10000%100*60*60),
 			current_step_id					= j.current_step,
 			current_step_name				= max(sjs.step_name),
-			current_step_estimated_start_time = case when max(sja.last_executed_step_id) is null then max(sja.run_requested_date) else max(dateadd(s,sjh_prev_step.run_duration%100+sjh_prev_step.run_duration/100%100*60+sjh_prev_step.run_duration/10000%100*60*60,sja.last_executed_step_date)) end, 
+			current_step_estimated_start_time = case when max(sja.last_executed_step_id) is null then max(sja.run_requested_date) else max(dateadd(s,sjh_prev_step.run_duration%100+sjh_prev_step.run_duration/100%100*60+sjh_prev_step.run_duration/10000%100*60*60,sja.last_executed_step_date)) end,
 			current_step_average_duration	= avg(sjh.run_duration%100+sjh.run_duration/100%100*60+sjh.run_duration/10000%100*60*60),
-			current_step_estimated_duration	= case when max(sja.last_executed_step_id) is null then datediff(s,max(sja.run_requested_date),getdate()) else max(datediff(s,dateadd(s,sjh_prev_step.run_duration%100+sjh_prev_step.run_duration/100%100*60+sjh_prev_step.run_duration/10000%100*60*60,sja.last_executed_step_date),getdate())) end, 
+			current_step_estimated_duration	= case when max(sja.last_executed_step_id) is null then datediff(s,max(sja.run_requested_date),getdate()) else max(datediff(s,dateadd(s,sjh_prev_step.run_duration%100+sjh_prev_step.run_duration/100%100*60+sjh_prev_step.run_duration/10000%100*60*60,sja.last_executed_step_date),getdate())) end,
 			current_step_stdv_duration		= stdev (sjh.run_duration%100+sjh.run_duration/100%100*60+sjh.run_duration/10000%100*60*60),
 			current_step_type				= max(sjs.subsystem),
 			current_step_command			= max(sjs.command)
@@ -569,7 +569,7 @@ begin
 			and sjh_job.row<=@TopOnJobHistory
 		where running=1
 		and (@SPID=0 or ses.session_id=@SPID)
-		group by 
+		group by
 				ses.session_id,
 				sj.name,
 				j.job_id,
@@ -601,10 +601,10 @@ end
 
 if @DebugMode = 1 select * from @SessionsInformation;
 
---if @DebugMode = 1 
+--if @DebugMode = 1
 with SessionsInformation as
 (
-	select 
+	select
 			session_id,
 			/*Requests*/
 			database_id				= max(database_id),
@@ -743,7 +743,7 @@ select top(@Top)
 		qp.query_plan ,
 		getdate() as Collection_Time
 from	sys.dm_exec_sessions ses  (nolock)
-left join sys.dm_exec_requests  r 
+left join sys.dm_exec_requests  r
 	on ses.session_id = r.session_id
 cross apply sys.dm_exec_sql_text(r.sql_handle) AS t
 CROSS APPLY sys.dm_exec_query_plan (r.plan_handle) as qp
@@ -754,19 +754,19 @@ full outer join @JobsSessions js
 left outer join @TopWaitPerSession TopSes
 	on TopSes.session_id = ses.session_id
 where 1=1
-and		
+and
 	(
-		(		@Filter not in ('JOBS','BLOCKED','TEMPDB','XTP') 
-			and ses.session_id = case @SPID when 0 then ses.session_id else @SPID end 
+		(		@Filter not in ('JOBS','BLOCKED','TEMPDB','XTP')
+			and ses.session_id = case @SPID when 0 then ses.session_id else @SPID end
 			and ses.session_id > case @ShowBackgroundSessions when 0 then 50 else 0 end
 		) --The rest of the cases
-		or		
+		or
 		(@Filter in ('JOBS') and js.job_id is not null) --Jobs
-		or		
+		or
 		(@Filter in ('BLOCKED') and si.blocked_by_spid>0) --Blocked
-		or		
+		or
 		(@Filter in ('TEMPDB') and si.tempdb_storage>0) --TempDB
-		or		
+		or
 		(@Filter in ('XTP') and (si.xtp_transactions>0 or si.wait_event like '%XTP%')) --XTP
 	)
 and (@ShowInactiveSessions=1 or lower(coalesce(si.[status] collate DATABASE_DEFAULT, ses.[status] collate DATABASE_DEFAULT)) not in ( 'sleeping' , 'dormant' ) or si.open_transaction_count > 0 or si.blocked_by_spid > 0) --Active
