@@ -1,4 +1,5 @@
 
+-- Versao com Cross APPLY
 
 --select max(DateTime) from dba.dbo.tb_performance_raw_scom
 
@@ -14,8 +15,8 @@ id int identity primary key,
 comando varchar(max)
 )
 
-DECLARE @DATAINI VARCHAR(30) = '2020-11-27 00:00:00.000'
-DECLARE @DATAFIM VARCHAR(30) = '2020-11-27 23:59:59.000'
+DECLARE @DATAINI VARCHAR(30) = '2020-12-08 00:00:00.000'
+DECLARE @DATAFIM VARCHAR(30) = '2020-12-08 23:59:59.000'
 DECLARE @rows int
 DECLARE @texto VARCHAR(500)
 
@@ -23,8 +24,8 @@ INSERT INTO #Tabelas (comando)
 
 select
   '
-  INSERT INTO dba.dbo.tb_performance_raw_scom
-  select distinct  A.DateTime,
+--  INSERT INTO dba.dbo.tb_performance_raw_scom
+  select distinct A.DateTime,
 				a.SampleValue,
 				cast (c.ManagedEntityTypeSystemName as varchar(256)) as ManagedEntityTypeSystemName ,
 				cast (c.ManagedEntityTypeDefaultName as varchar(256)) as ManagedEntityTypeDefaultName ,
@@ -39,6 +40,19 @@ select
 												on a.ManagedEntityRowId = b.ManagedEntityRowId
 											 inner join [OperationsManagerDW].dbo.ManagedEntityType c
 												 on b.ManagedEntityTypeRowId = c.ManagedEntityTypeRowId
+
+
+												 CROSS APPLY(
+
+select [Path] as Path from OperationsManager.dbo.BaseManagedEntity crs
+where FullName like ''%SQL%''
+and crs.Path = b.Path
+
+)
+
+D
+
+
 				where 1 = 1
 				AND A.DateTime between ''' + @DataIni +
 				' '' and ''' + @DataFim + ''''
@@ -56,7 +70,7 @@ select
 
 Use
 OperationsManagerDW
-go
+
 
 declare @Loop int,@dscomando nvarchar(MAX)
 
