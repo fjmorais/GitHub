@@ -1,5 +1,4 @@
 
--- Versao com Cross APPLY
 
 --select max(DateTime) from dba.dbo.tb_performance_raw_scom
 
@@ -24,7 +23,7 @@ INSERT INTO #Tabelas (comando)
 
 select
   '
---  INSERT INTO dba.dbo.tb_performance_raw_scom
+  INSERT INTO dba.dbo.tb_performance_raw_scom
   select distinct A.DateTime,
 				a.SampleValue,
 				cast (c.ManagedEntityTypeSystemName as varchar(256)) as ManagedEntityTypeSystemName ,
