@@ -4,6 +4,11 @@
 
 -- Inicio do processo para coletar as tabelas que possuem dados de linha a linha
 
+Use
+OperationsManagerDW
+GO
+
+
 IF OBJECT_ID('tempdb..#Tabelas') IS NOT NULL DROP TABLE #Tabelas
 
 -- criar tabela temporária com id incremental para ajudar na questão do loop
