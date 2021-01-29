@@ -1,0 +1,1 @@
+robocopy   R:\PGBL\  \\ISMTZBDPGBLPLRT\G$\Logs\PGBL PGBL_LOG*.ldf      /MIR /MT:10 /SEC
