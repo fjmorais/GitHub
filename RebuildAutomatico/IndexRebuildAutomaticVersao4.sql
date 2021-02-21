@@ -7,30 +7,30 @@ EXEC usp_Rebuild_PGBL 18,00,'PGBL', 200000
 
 ALTER PROCEDURE usp_Rebuild_PGBL
 
-(@hora int, @min int,@banco varchar(20), @logsizefinal int)    
+(@hora int, @min int,@banco varchar(20), @logsizefinal int)
 
 AS
 
-BEGIN    
-    
-SET NOCOUNT ON    
+BEGIN
+
+SET NOCOUNT ON
 
 --DROP TABLE #TableRebuildScripts
 
---SELECT char(9) + '[' + c.column_name + '] ' + c.data_type 
+--SELECT char(9) + '[' + c.column_name + '] ' + c.data_type
 --   + CASE WHEN c.data_type IN ('decimal')
---      THEN isnull('(' + convert(varchar, c.numeric_precision) + ', ' + convert(varchar, c.numeric_scale) + ')', '') 
+--      THEN isnull('(' + convert(varchar, c.numeric_precision) + ', ' + convert(varchar, c.numeric_scale) + ')', '')
 --      ELSE '' END
 --   + CASE WHEN c.IS_NULLABLE = 'YES' THEN ' NULL' ELSE '' END
 --   + ','
---From tempdb.INFORMATION_SCHEMA.COLUMNS c 
---WHERE TABLE_NAME LIKE '%#TableRebuildScripts%' 
+--From tempdb.INFORMATION_SCHEMA.COLUMNS c
+--WHERE TABLE_NAME LIKE '%#TableRebuildScripts%'
 
 
-IF GETDATE()> dateadd(mi,+@min,dateadd(hh,+@hora,cast(floor(cast(getdate()as float))as datetime)))-- hora > a entrada na procedure    
-BEGIN    
-RETURN    
-END    
+IF GETDATE()> dateadd(mi,+@min,dateadd(hh,+@hora,cast(floor(cast(getdate()as float))as datetime)))-- hora > a entrada na procedure
+BEGIN
+RETURN
+END
 
 
 
@@ -82,9 +82,9 @@ CREATE TABLE #logspace2
 
 INSERT INTO #TableRebuildScripts (TableName,IndexName,avg_fragmentation_in_percent,page_count,QtdLinhas,IndexSizeMB,SCRIPT)
 
-SELECT 
-t.[name] AS TableName,  
-    isnull (i.[name],'PK_CLUSTER') AS IndexName,  
+SELECT
+t.[name] AS TableName,
+    isnull (i.[name],'PK_CLUSTER') AS IndexName,
     avg_fragmentation_in_percent,
   page_count,
  sum(p.rows) AS QtdLinhas,
@@ -93,17 +93,17 @@ t.[name] AS TableName,
 	'ALTER INDEX ' + isnull (i.[name],'PK_CLUSTER') + ' ON ' + t.[name] + ' REBUILD WITH (ONLINE=ON)' AS SCRIPT
 
 
-FROM sys.dm_db_partition_stats AS s  
-INNER JOIN sys.indexes AS i ON s.[object_id] = i.[object_id]   
-    AND s.[index_id] = i.[index_id]  
+FROM sys.dm_db_partition_stats AS s
+INNER JOIN sys.indexes AS i ON s.[object_id] = i.[object_id]
+    AND s.[index_id] = i.[index_id]
 INNER JOIN sys.dm_db_index_physical_stats(DB_ID(), NULL, NULL, NULL, 'SAMPLED') ips
 						 ON (ips.object_id = i.object_id)
 						 AND (ips.index_id = i.index_id)
-INNER JOIN sys.tables t ON t.OBJECT_ID = i.object_id  
+INNER JOIN sys.tables t ON t.OBJECT_ID = i.object_id
 INNER JOIN sys.partitions p ON i.object_id = p.object_id
-INNER JOIN sys.dm_db_partition_stats AS sts ON sts.[object_id] = i.[object_id]   
-										  AND sts.[index_id] = i.[index_id]   
-WHERE 
+INNER JOIN sys.dm_db_partition_stats AS sts ON sts.[object_id] = i.[object_id]
+										  AND sts.[index_id] = i.[index_id]
+WHERE
  ips.database_id = DB_ID()
   AND page_count > 1000
   and avg_fragmentation_in_percent > 30
@@ -126,7 +126,7 @@ ORDER BY 4 ASC
 --SET @min = 30
 --SET @banco = 'PGBL'
 
-DECLARE @comando nvarchar(4000)    
+DECLARE @comando nvarchar(4000)
 declare @Loop int
 set @Loop = 1
 
@@ -138,14 +138,14 @@ SET  @logsize = 1
 
 while exists (select top 1 null from #TableRebuildScripts) OR @logsize < @logsizefinal
 
-begin    
-    
--- Loop para a procedure não executar depois de 04:50 da manhã.    
--- No Job, no SQL Server Agent, o mesmo deve ser agendado, com sugestão, às 02:00 da manhã.    
+begin
+
+-- Loop para a procedure nï¿½o executar depois de 04:50 da manhï¿½.
+-- No Job, no SQL Server Agent, o mesmo deve ser agendado, com sugestï¿½o, ï¿½s 02:00 da manhï¿½.
 
 
 INSERT INTO #logspace
-EXEC ('DBCC SQLPERF(LOGSPACE);')   
+EXEC ('DBCC SQLPERF(LOGSPACE);')
 
 INSERT INTO #logspace2
 SELECT dbname
@@ -154,14 +154,14 @@ SELECT dbname
 , (logSizeMB * logSpaceUsedPct / 100) AS LogSpaceUsedMB
 , logSizeMB - (logSizeMB * logSpaceUsedPct / 100) AS LogSpaceUnusedMB --INTO #logspace2
 FROM #logspace
-WHERE dbname = @banco -- Variável de entrada
+WHERE dbname = @banco -- Variï¿½vel de entrada
 
 
-IF GETDATE()> dateadd(mi,+@min,dateadd(hh,+@hora,cast(floor(cast(getdate()as float))as datetime)))-- hora > a entrada na procedure    
+IF GETDATE()> dateadd(mi,+@min,dateadd(hh,+@hora,cast(floor(cast(getdate()as float))as datetime)))-- hora > a entrada na procedure
 
-BEGIN    
-BREAK    
-END    
+BEGIN
+BREAK
+END
 
 
 --DECLARE @hora int
@@ -181,16 +181,16 @@ END
 INSERT INTO #execute (Script,Banco,Tabela,Indice,IndexSizeMB,DataIni,DataFim)
 SELECT SCRIPT , @banco, TableName,IndexName,IndexSizeMB,Getdate() AS DataIni,NULL AS DataFim
 from #TableRebuildScripts
-where idloop = @Loop    
+where idloop = @Loop
 
 --declare @Loop int
 --set @Loop = 2
 
 SELECT @comando = script
 from #TableRebuildScripts
-where idloop = @Loop    
+where idloop = @Loop
 
-execute sp_executesql @comando   
+execute sp_executesql @comando
 
 
 --declare @Loop int
@@ -250,36 +250,39 @@ AND idloop = @loop
 
 INSERT INTO DBA.dbo.Tb_rebuild_log (Script,Banco,Tabela,Indice,IndexSizeMB,logSizeMB,logSpaceUsedPct,logSpaceUsedMB,LogSpaceUnusedMB,DataIni,DataFim,Duration)
 SELECT Script,Banco,Tabela,Indice,IndexSizeMB,logSizeMB,logSpaceUsedPct,logSpaceUsedMB,LogSpaceUnusedMB,DataIni,DataFim,Duration FROM #execute
-where idloop = @Loop    
+where idloop = @Loop
 
 
 delete from #TableRebuildScripts
-where idloop = @Loop    
+where idloop = @Loop
 
 
 delete from #execute
-where idloop = @Loop    
+where idloop = @Loop
 
 
-SELECT  
+SELECT
 @logsize = logSizeMB
 FROM #logspace
 WHERE dbname = @banco
 
-SELECT  
+SELECT
 @logsize = cast( LogSpaceUsedMB AS bigint )
 FROM #logspace2
 WHERE dbname = @banco
+
+if @logsize < 80000
+-- start bkp log on sql server
 
 DELETE FROM #logspace
 
 DELETE FROM #logspace2
 
 
-set @loop = @loop + 1    
-end    
+set @loop = @loop + 1
+end
 
-END    
+END
 
 
 --USE
