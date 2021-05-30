@@ -1,3 +1,9 @@
+net stop "SQL Server (MSSQLSERVER)"
+net start "SQL Server (MSSQLSERVER)"
+
+net start "SQL Server Agent (MSSQLSERVER)"
+net stop "SQL Server Agent (MSSQLSERVER)"
+
 --|Pessoal,
 
 --Atenção ao usar o template do SQL 2017 que criamos. Ver o collation, trocar o usuário de serviço para admsql
