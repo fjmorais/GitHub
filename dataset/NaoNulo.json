@@ -1,0 +1,20 @@
+{
+	"name": "NaoNulo",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "conexaoDatalake",
+			"type": "LinkedServiceReference"
+		},
+		"annotations": [],
+		"type": "Json",
+		"typeProperties": {
+			"location": {
+				"type": "AzureBlobFSLocation",
+				"folderPath": "naonulos",
+				"fileSystem": "silver"
+			}
+		},
+		"schema": {}
+	},
+	"type": "Microsoft.DataFactory/factories/datasets"
+}

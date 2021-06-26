@@ -1,0 +1,19 @@
+{
+	"name": "datasetDataLakeJSON",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "conexaoDatalake",
+			"type": "LinkedServiceReference"
+		},
+		"annotations": [],
+		"type": "Json",
+		"typeProperties": {
+			"location": {
+				"type": "AzureBlobFSLocation",
+				"fileSystem": "bronze"
+			}
+		},
+		"schema": {}
+	},
+	"type": "Microsoft.DataFactory/factories/datasets"
+}

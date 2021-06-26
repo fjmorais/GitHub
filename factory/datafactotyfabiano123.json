@@ -1,0 +1,9 @@
+{
+	"name": "datafactotyfabiano123",
+	"location": "eastus2",
+	"identity": {
+		"type": "SystemAssigned",
+		"principalId": "db36396e-bb05-4889-b656-384229891f22",
+		"tenantId": "361841b1-8c3a-4144-bca4-07c81ebf969d"
+	}
+}
